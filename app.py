@@ -56,7 +56,7 @@ elif menu == "📊 Predictions":
             
             # Preprocess and predict (Dummy model loading here)
             try:
-                rf_model = joblib.load('random_forest.pkl')
+                rf_model = joblib.load('lr_model.pkl')
                 X, df_processed = preprocess_data(df)
                 predictions = rf_model.predict(X)
                 df_processed['Predicted_Time_taken(min)'] = predictions
