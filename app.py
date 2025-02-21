@@ -97,7 +97,7 @@ elif menu == "📊 Predictions":
         if st.button("Predict"):
             with st.spinner("🚴‍♂️ Estimating delivery time..."):
                 try:
-                    rf_model = joblib.load('random_forest.pkl')
+                    rf_model = joblib.load('lr_model.pkl')
                     input_data = pd.DataFrame({
                         'Restaurant_latitude': [rest_lat],
                         'Restaurant_longitude': [rest_lon],
