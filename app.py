@@ -6,22 +6,69 @@ import joblib
 import io
 from geopy.distance import geodesic
 
+def time_to_minutes(time_str):
+    if pd.isna(time_str) or time_str == 'NaN':
+        return np.nan
+    try:
+        t = datetime.strptime(time_str, '%H:%M:%S')
+        return t.hour * 60 + t.minute
+    except:
+        return np.nan
+
 # Preprocessing function
 def preprocess_data(df):
+    # Handle missing values
+    numeric_cols = ['Delivery_person_Age', 'Delivery_person_Ratings', 'multiple_deliveries']
+    for col in numeric_cols:
+        df[col] = df[col].replace('NaN', np.nan).astype(float, errors='ignore')
+        df[col].fillna(df[col].median(), inplace=True)
+
+    # Calculate distance
     df['distance_km'] = df.apply(lambda row: geodesic((row["Restaurant_latitude"], row["Restaurant_longitude"]),
                                                        (row["Delivery_location_latitude"], row["Delivery_location_longitude"])).kilometers, axis=1)
+
+   
+    # Fix negative latitudes
+    df['Restaurant_latitude'] = df['Restaurant_latitude'].abs()
+    df['Delivery_location_latitude'] = df['Delivery_location_latitude'].abs()
+
+    # Time features
     df['Order_Date'] = pd.to_datetime(df['Order_Date'], format='%d-%m-%Y')
     df['day_of_week'] = df['Order_Date'].dt.dayofweek
     df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
-    
+   
+    df['order_time_min'] = df['Time_Orderd'].apply(time_to_minutes)
+    df['pickup_time_min'] = df['Time_Order_picked'].apply(time_to_minutes)
+    df['prep_time'] = df['pickup_time_min'] - df['order_time_min']
+    df['prep_time'].fillna(df['prep_time'].median(), inplace=True)
+
+    # Clean categorical variables (simple encoding since no LabelEncoders provided)
+    df['Weatherconditions'] = df['Weatherconditions'].str.replace('conditions ', '').replace('NaN', 'Unknown')
+    df['Road_traffic_density'] = df['Road_traffic_density'].replace('NaN', 'Unknown')
+
+    # Manual encoding (assuming model expects numeric inputs)
     weather_map = {'Sunny': 0, 'Stormy': 1, 'Sandstorms': 2, 'Cloudy': 3, 'Fog': 4, 'Windy': 5, 'Unknown': 6}
     traffic_map = {'Low': 0, 'Medium': 1, 'High': 2, 'Jam': 3, 'Unknown': 4}
-    df['Weatherconditions'] = df['Weatherconditions'].map(weather_map).fillna(6)
+    order_map = {'Snack': 0, 'Drinks': 1, 'Buffet': 2, 'Meal': 3}
+    vehicle_map = {'motorcycle': 0, 'scooter': 1, 'electric_scooter': 2, 'bicycle': 3}
+    festival_map = {'No': 0, 'Yes': 1}
+    city_map = {'Metropolitian': 0, 'Urban': 1, 'Semi-Urban': 2, 'NaN': 3}
+
+    df['Weatherconditions'] = df['Weatherconditions'].map(weather_map).fillna(6)  # Default to Unknown
     df['Road_traffic_density'] = df['Road_traffic_density'].map(traffic_map).fillna(4)
-    
-    features = ['distance_km', 'Weatherconditions', 'Road_traffic_density', 'day_of_week', 'is_weekend']
+    df['Type_of_order'] = df['Type_of_order'].map(order_map)
+    df['Type_of_vehicle'] = df['Type_of_vehicle'].map(vehicle_map)
+    df['Festival'] = df['Festival'].map(festival_map).fillna(0)  # Default to No
+    df['City'] = df['City'].map(city_map).fillna(3)  # Default to NaN encoded as 3
+   
+    features = ['Delivery_person_Age', 'Delivery_person_Ratings', 'distance_km',
+               'Weatherconditions', 'Road_traffic_density', 'Vehicle_condition',
+               'Type_of_order', 'Type_of_vehicle', 'multiple_deliveries',
+               'Festival', 'City', 'day_of_week', 'is_weekend', 'prep_time']
+   
     X = df[features]
     return X, df
+
 
 
 # Set theme colors in sidebar
@@ -97,16 +144,25 @@ elif menu == "📊 Predictions":
         if st.button("Predict"):
             with st.spinner("🚴‍♂️ Estimating delivery time..."):
                 try:
-                    rf_model = joblib.load('lr_model.pkl')
+                    rf_model = joblib.load('random_forest.pkl')
                     input_data = pd.DataFrame({
+                        'Delivery_person_Age': [age],
+                        'Delivery_person_Ratings': [ratings],
                         'Restaurant_latitude': [rest_lat],
                         'Restaurant_longitude': [rest_lon],
                         'Delivery_location_latitude': [del_lat],
                         'Delivery_location_longitude': [del_lon],
                         'Order_Date': [order_date.strftime('%d-%m-%Y')],
+                        'Time_Orderd': [time_order],
+                        'Time_Order_picked': [time_picked],
                         'Weatherconditions': [weather],
-                        'Road_traffic_density': [traffic]
-                    })
+                        'Road_traffic_density': [traffic],
+                        'Vehicle_condition': [vehicle_cond],
+                        'Type_of_order': [order_type],
+                        'Type_of_vehicle': [vehicle_type],
+                        'multiple_deliveries': [multi_del],
+                        'Festival': [festival],
+                        'City': [city]                    })
                     
                     X, _ = preprocess_data(input_data)
                     prediction = rf_model.predict(X)[0]
